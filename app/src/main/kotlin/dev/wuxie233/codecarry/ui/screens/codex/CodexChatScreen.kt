@@ -97,7 +97,7 @@ import dev.wuxie233.codecarry.ui.screens.chat.isAmoledTheme
 import dev.wuxie233.codecarry.data.codex.requestKey
 import dev.wuxie233.codecarry.ui.components.ErrorStateCard
 import dev.wuxie233.codecarry.ui.components.LoadingStateCard
-import dev.wuxie233.codecarry.ui.screens.chat.MessageMarkdownContent
+
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -357,10 +357,24 @@ fun CodexChatScreen(
                         }
                     }
                     items(timeline, key = { (turnId, item) -> "$turnId:${item.id ?: item.type}" }) { (_, item) ->
-                        CodexTimelineItem(item, onOpenThread, viewModel::loadRemoteImage)
+                        CodexTimelineItem(
+                            item = item,
+                            onOpenThread = onOpenThread,
+                            loadRemoteImage = viewModel::loadRemoteImage,
+                            workspaceCwd = state.thread?.cwd,
+                            onOpenWorkspaceFile = viewModel::openWorkspaceFile,
+                        )
                     }
                     state.thread?.turns?.lastOrNull()?.id?.let { turnId ->
-                        state.plans[turnId]?.let { plan -> item("plan:$turnId") { CodexTurnPlanCard(plan) } }
+                        state.plans[turnId]?.let { plan ->
+                            item("plan:$turnId") {
+                                CodexTurnPlanCard(
+                                    plan = plan,
+                                    workspaceCwd = state.thread?.cwd,
+                                    onOpenWorkspaceFile = viewModel::openWorkspaceFile,
+                                )
+                            }
+                        }
                         state.diffs[turnId]?.takeIf { it.isNotBlank() }?.let { diff ->
                             item("diff:$turnId") {
                                 var expanded by rememberSaveable(turnId) { mutableStateOf(false) }
@@ -439,6 +453,13 @@ fun CodexChatScreen(
         onDismiss = { memoryOpen = false },
         onSelect = { viewModel.setMemoryMode(it); memoryOpen = false },
     )
+    state.filePreview?.let { preview ->
+        CodexFilePreviewSheet(
+            preview = preview,
+            onDismiss = viewModel::dismissFilePreview,
+            onRetry = viewModel::retryFilePreview,
+        )
+    }
 }
 
 internal fun codexChatVisibilityForEvent(event: Lifecycle.Event): Boolean? = when (event) {

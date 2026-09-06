@@ -200,6 +200,11 @@
     <string name="codex_enable">启用</string>
     <string name="codex_disable">禁用</string>
     <string name="codex_clear">清除</string>
+    <string name="chat_file_preview_title">文件预览</string>
+    <string name="chat_file_preview_loading">正在加载文件…</string>
+    <string name="chat_file_preview_unavailable">无法预览该文件。</string>
+    <string name="chat_file_preview_copy_path">复制路径</string>
+    <string name="chat_file_preview_copy_contents">复制内容</string>
     <string name="session_rename">重命名会话</string>
     <string name="session_rename_title">标题</string>
     <string name="session_rename_button">重命名</string>

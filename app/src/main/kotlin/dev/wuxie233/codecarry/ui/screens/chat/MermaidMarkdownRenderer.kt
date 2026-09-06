@@ -84,19 +84,17 @@ fun MermaidAwareMarkdownCodeFence(
     node: ASTNode,
     highlights: Highlights.Builder = Highlights.Builder(),
 ) {
-    DisableSelection {
-        MarkdownCodeFence(content, node) { code, language ->
-            val decision = remember(code, language) { decideMermaidFenceRendering(code, language) }
-            if (decision.mode == MermaidFenceRenderMode.RenderDiagram) {
-                MermaidMarkdownDiagram(
-                    source = code,
-                    fallbackContent = {
-                        SafeMarkdownHighlightedCode(code, language, highlights)
-                    },
-                )
-            } else {
-                SafeMarkdownHighlightedCode(code, language, highlights)
-            }
+    MarkdownCodeFence(content, node) { code, language ->
+        val decision = remember(code, language) { decideMermaidFenceRendering(code, language) }
+        if (decision.mode == MermaidFenceRenderMode.RenderDiagram) {
+            MermaidMarkdownDiagram(
+                source = code,
+                fallbackContent = {
+                    SafeMarkdownHighlightedCode(code, language, highlights)
+                },
+            )
+        } else {
+            SafeMarkdownHighlightedCode(code, language, highlights)
         }
     }
 }
@@ -165,34 +163,36 @@ fun MermaidMarkdownDiagram(
         MermaidWebRenderState.Fallback -> 180.dp
     }
 
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp)
-            .heightIn(min = 140.dp, max = 720.dp)
-            .height(height)
-            .clip(shape)
-            .border(BorderStroke(1.dp, borderColor), shape)
-            .background(backgroundColor),
-    ) {
-        val renderHtml = html
-        if (renderHtml == null) {
-            CircularProgressIndicator(
-                modifier = Modifier.align(Alignment.Center),
-                color = colorScheme.primary,
-            )
-        } else {
-            PooledMermaidWebView(
-                html = renderHtml,
-                backgroundColor = backgroundColor,
-                onRendered = latestOnRendered,
-                onFailed = latestOnFailed,
-                onLoading = { renderState = MermaidWebRenderState.Loading },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(height)
-                    .horizontalScroll(rememberScrollState()),
-            )
+    DisableSelection {
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp)
+                .heightIn(min = 140.dp, max = 720.dp)
+                .height(height)
+                .clip(shape)
+                .border(BorderStroke(1.dp, borderColor), shape)
+                .background(backgroundColor),
+        ) {
+            val renderHtml = html
+            if (renderHtml == null) {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center),
+                    color = colorScheme.primary,
+                )
+            } else {
+                PooledMermaidWebView(
+                    html = renderHtml,
+                    backgroundColor = backgroundColor,
+                    onRendered = latestOnRendered,
+                    onFailed = latestOnFailed,
+                    onLoading = { renderState = MermaidWebRenderState.Loading },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(height)
+                        .horizontalScroll(rememberScrollState()),
+                )
+            }
         }
     }
 }

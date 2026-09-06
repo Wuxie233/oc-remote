@@ -85,6 +85,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.LocalView
@@ -1188,6 +1189,7 @@ fun ChatScreen(
     viewModel: ChatViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val filePreview by viewModel.filePreview.collectAsState()
     val dshPresets by viewModel.dshPresets.collectAsState()
     val draftText by viewModel.draftText.collectAsState()
     val draftAttachmentUris by viewModel.draftAttachmentUris.collectAsState()
@@ -1785,6 +1787,11 @@ fun ChatScreen(
         LocalCollapseTools provides collapseTools,
         LocalHapticFeedbackEnabled provides hapticEnabled,
         LocalImageSaveRequest provides requestSaveImage,
+        LocalUriHandler provides rememberChatMarkdownUriHandler(
+            cwd = viewModel.getSessionDirectory(),
+            onWorkspaceFile = viewModel::openWorkspaceFile,
+        ),
+        LocalChatMarkdownWorkspaceCwd provides viewModel.getSessionDirectory(),
     ) {
     val runningSubagentCount = uiState.subagents.count(ChatSubagentItem::isRunning)
     val showSubagentContext = showSubagentDrawer &&
@@ -3288,6 +3295,14 @@ fun ChatScreen(
     }
 
     // Rename dialog
+    filePreview?.let { preview ->
+        ChatFilePreviewSheet(
+            preview = preview,
+            onDismiss = viewModel::dismissFilePreview,
+            onRetry = viewModel::retryFilePreview,
+        )
+    }
+
     if (showRenameDialog) {
         var renameText by remember { mutableStateOf(uiState.sessionTitle) }
         AlertDialog(

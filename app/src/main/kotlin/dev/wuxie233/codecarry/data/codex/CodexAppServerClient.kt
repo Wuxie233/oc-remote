@@ -41,6 +41,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 import java.io.Closeable
+import java.io.IOException
 import java.net.URI
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
@@ -57,6 +58,11 @@ class CodexDisconnectedException(
     message: String = "Codex app-server connection closed",
     cause: Throwable? = null,
 ) : RuntimeException(message, cause)
+
+class CodexRemoteFileNotTextException(
+    val path: String,
+    cause: Throwable? = null,
+) : IOException("Remote file is not previewable text: $path", cause)
 
 sealed interface CodexClientConnectionState {
     data object Disconnected : CodexClientConnectionState
@@ -666,21 +672,39 @@ open class CodexAppServerClient internal constructor(
     }
 
     /** Read bytes from the daemon filesystem, never from Android-local paths. */
-    suspend fun readImageFile(path: String): ByteArray {
+    suspend fun readImageFile(path: String): ByteArray =
+        readFileBytes(path, maxBytes = 16 * 1024 * 1024, timeoutMessage = "Timed out reading remote image")
+
+    suspend fun readTextFile(path: String, maxBytes: Int = 1 * 1024 * 1024): String {
+        val bytes = readFileBytes(path, maxBytes = maxBytes, timeoutMessage = "Timed out reading remote file")
+        if (bytes.contains(0)) throw CodexRemoteFileNotTextException(path)
+        return runCatching {
+            Charsets.UTF_8.newDecoder()
+                .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+                .decode(java.nio.ByteBuffer.wrap(bytes))
+                .toString()
+        }.getOrElse { throw CodexRemoteFileNotTextException(path, it) }
+    }
+
+    suspend fun readFileBytes(
+        path: String,
+        maxBytes: Int = 16 * 1024 * 1024,
+        timeoutMessage: String = "Timed out reading remote file",
+    ): ByteArray {
         require(normalizeCodexDirectoryPath(path) != null) {
-            "Remote image must be an absolute path"
+            "Remote file must be an absolute path"
         }
         val result = kotlinx.coroutines.withTimeoutOrNull(15_000) {
             capabilityRequest("fs/readFile", buildJsonObject { put("path", path) })
-        }?.objectOrEmpty() ?: throw java.io.IOException("Timed out reading remote image")
+        }?.objectOrEmpty() ?: throw java.io.IOException(timeoutMessage)
         return withContext(Dispatchers.Default) {
             val encoded = result["dataBase64"] as? JsonPrimitive
             check(encoded?.isString == true) { "Invalid Codex fs/readFile response" }
             val data = encoded.content
-            val maxBytes = 16 * 1024 * 1024
-            require(data.length <= ((maxBytes + 2) / 3) * 4) { "Remote image exceeds 16 MiB" }
+            require(data.length <= ((maxBytes + 2) / 3) * 4) { "Remote file exceeds ${maxBytes / (1024 * 1024)} MiB" }
             Base64.getDecoder().decode(data).also {
-                require(it.size <= maxBytes) { "Remote image exceeds 16 MiB" }
+                require(it.size <= maxBytes) { "Remote file exceeds ${maxBytes / (1024 * 1024)} MiB" }
             }
         }
     }

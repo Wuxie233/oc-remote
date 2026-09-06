@@ -220,6 +220,13 @@ fork based on OC Remote; the Android namespace/applicationId is
   composer spacing, AMOLED treatment, and navigation insets when adding
   backend-specific controls. Composer model/effort are compact chips, not
   full-width menus.
+- Markdown fenced/indented code is selectable and has a one-tap copy control
+  for the inner code. Mermaid diagrams stay unselected.
+- Tappable Markdown links and workspace paths: `http(s)` opens the system
+  browser; absolute/relative workspace files open an in-app preview. Codex
+  reads via `fs/readFile`; OpenCode uses `readFileText`. DSH has no file-content
+  RPC, so preview fails with copy-path. Never send Linux daemon paths through
+  Android file intents.
 - Codex user-message images come from `raw.content`: `image.url` is a data or
   HTTP URL, while `localImage.path` belongs to the daemon and must use its
   `fs/readFile` RPC. Never resolve remote image paths through Android files.

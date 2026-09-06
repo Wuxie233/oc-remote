@@ -3,14 +3,23 @@ package dev.wuxie233.codecarry.ui.screens.chat
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.DisableSelection
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -30,6 +39,7 @@ import dev.snipme.highlights.Highlights
 import dev.snipme.highlights.model.BoldHighlight
 import dev.snipme.highlights.model.ColorHighlight
 import dev.snipme.highlights.model.SyntaxLanguage
+import dev.wuxie233.codecarry.R
 import org.intellij.markdown.ast.ASTNode
 
 val safeHighlightedCodeFence: MarkdownComponent = {
@@ -46,10 +56,8 @@ fun SafeMarkdownHighlightedCodeFence(
     node: ASTNode,
     highlights: Highlights.Builder = Highlights.Builder(),
 ) {
-    DisableSelection {
-        MarkdownCodeFence(content, node) { code, language ->
-            SafeMarkdownHighlightedCode(code, language, highlights)
-        }
+    MarkdownCodeFence(content, node) { code, language ->
+        SafeMarkdownHighlightedCode(code, language, highlights)
     }
 }
 
@@ -59,10 +67,8 @@ fun SafeMarkdownHighlightedCodeBlock(
     node: ASTNode,
     highlights: Highlights.Builder = Highlights.Builder(),
 ) {
-    DisableSelection {
-        MarkdownCodeBlock(content, node) { code, language ->
-            SafeMarkdownHighlightedCode(code, language, highlights)
-        }
+    MarkdownCodeBlock(content, node) { code, language ->
+        SafeMarkdownHighlightedCode(code, language, highlights)
     }
 }
 
@@ -85,15 +91,17 @@ fun SafeMarkdownHighlightedCode(
     val annotatedCode = remember(code, language, highlights, codeTextColor) {
         buildSafeHighlightedAnnotatedString(code, language, highlights, codeTextColor)
     }
+    val clipboardManager = LocalClipboardManager.current
+    val copyPayload = markdownCodeCopyPayload(code)
 
-    DisableSelection {
-        MarkdownCodeBackground(
-            color = backgroundCodeColor,
-            shape = RoundedCornerShape(codeBackgroundCornerSize),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
-        ) {
+    MarkdownCodeBackground(
+        color = backgroundCodeColor,
+        shape = RoundedCornerShape(codeBackgroundCornerSize),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
             Box(
                 modifier = if (overflowTreatment == ChatOverflowTreatment.Wrap) {
                     Modifier.fillMaxWidth()
@@ -101,17 +109,59 @@ fun SafeMarkdownHighlightedCode(
                     Modifier.fillMaxWidth().chatCodeOverflow(codeWordWrap = codeWordWrap)
                 }
             ) {
-                Text(
-                    text = annotatedCode,
-                    color = codeTextColor,
-                    modifier = Modifier.padding(codeBlockPadding),
-                    style = style,
-                    softWrap = overflowTreatment == ChatOverflowTreatment.Wrap,
-                )
+                SelectionContainer {
+                    Text(
+                        text = annotatedCode,
+                        color = codeTextColor,
+                        modifier = Modifier.padding(codeBlockPadding),
+                        style = style,
+                        softWrap = overflowTreatment == ChatOverflowTreatment.Wrap,
+                    )
+                }
+            }
+            Box(modifier = Modifier.align(Alignment.TopEnd)) {
+                DisableSelection {
+                    IconButton(
+                        onClick = { clipboardManager.setText(AnnotatedString(copyPayload)) },
+                        modifier = Modifier.size(22.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = stringResource(R.string.chat_copy),
+                            modifier = Modifier.size(14.dp),
+                            tint = codeTextColor.copy(alpha = 0.55f),
+                        )
+                    }
+                }
             }
         }
     }
 }
+
+/**
+ * Clipboard payload for a rendered Markdown code block.
+ * [innerCode] is the fence/indented body already extracted by the renderer
+ * (no surrounding ``` / ~~~ markers).
+ */
+internal fun markdownCodeCopyPayload(innerCode: String): String = innerCode
+
+internal fun extractMarkdownFenceInnerCode(markdown: String): String {
+    val lines = markdown.lines()
+    val startIndex = lines.indexOfFirst { markdownFenceStartRegex.matches(it) }
+    if (startIndex < 0) return markdown
+    val startMatch = markdownFenceStartRegex.matchEntire(lines[startIndex]) ?: return markdown
+    val fenceMarker = startMatch.groupValues[1]
+    val closesWith = fenceMarker.first().toString().repeat(fenceMarker.length)
+    val codeLines = mutableListOf<String>()
+    var lineIndex = startIndex + 1
+    while (lineIndex < lines.size && lines[lineIndex].trim() != closesWith) {
+        codeLines += lines[lineIndex]
+        lineIndex++
+    }
+    return codeLines.joinToString("\n")
+}
+
+private val markdownFenceStartRegex = Regex("^\\s*(`{3,}|~{3,})\\s*([^\\s`]*)?.*$")
 
 internal fun buildSafeHighlightedAnnotatedString(
     code: String,

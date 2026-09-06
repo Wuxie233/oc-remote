@@ -29,9 +29,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -47,6 +48,7 @@ import com.mikepenz.markdown.compose.elements.MarkdownParagraph
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
+import com.mikepenz.markdown.model.markdownAnnotator
 import dev.wuxie233.codecarry.R
 import dev.wuxie233.codecarry.ui.theme.CodeTypography
 import org.intellij.markdown.IElementType
@@ -191,11 +193,16 @@ internal fun MessageMarkdownContent(
         },
     )
 
-    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    val workspaceCwd = LocalChatMarkdownWorkspaceCwd.current
     val linkColor = when {
         isAmoled -> MaterialTheme.colorScheme.primary
         isUser -> MaterialTheme.colorScheme.onPrimaryContainer
         else -> MaterialTheme.colorScheme.primary
+    }
+    val onMarkdownLink = { raw: String -> uriHandler.openUri(raw) }
+    val annotator = markdownAnnotator { content, node ->
+        annotateBareMarkdownPathNode(content, node, workspaceCwd, typography.link)
     }
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         blocks.forEach { block ->
@@ -216,7 +223,7 @@ internal fun MessageMarkdownContent(
                             codeForeground = codeBlockFg,
                             linkColor = linkColor,
                             bodyFontSizeSp = bodyFontSize.value.toInt(),
-                            onLinkClick = { url -> openMessageLink(context, url) },
+                            onLinkClick = onMarkdownLink,
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -227,6 +234,7 @@ internal fun MessageMarkdownContent(
                             typography = typography,
                             components = components,
                             imageTransformer = Coil2ImageTransformerImpl,
+                            annotator = annotator,
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -239,6 +247,7 @@ internal fun MessageMarkdownContent(
                             typography = typography,
                             components = components,
                             imageTransformer = Coil2ImageTransformerImpl,
+                            annotator = annotator,
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -504,6 +513,22 @@ private fun ScrollableMarkdownParagraph(
 
 internal fun containsWideAsciiToken(text: String, threshold: Int = 28): Boolean {
     return ChatOverflowPolicy.containsWideAsciiToken(text = text, threshold = threshold)
+}
+
+internal fun AnnotatedString.Builder.annotateBareMarkdownPathNode(
+    content: String,
+    node: ASTNode,
+    cwd: String?,
+    linkStyle: TextStyle,
+): Boolean {
+    if (node.type != MarkdownTokenTypes.TEXT && node.type != MarkdownElementTypes.CODE_SPAN) return false
+    val raw = runCatching { content.substring(node.startOffset, node.endOffset) }.getOrElse { return false }
+    val annotated = annotateBareWorkspacePaths(AnnotatedString(raw), cwd, linkStyle.toSpanStyle())
+    if (annotated.getStringAnnotations(ChatMarkdownPathAnnotationTag, 0, annotated.length).isEmpty()) {
+        return false
+    }
+    append(annotated)
+    return true
 }
 
 @Composable

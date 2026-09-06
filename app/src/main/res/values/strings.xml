@@ -204,6 +204,11 @@
     <string name="codex_enable">Enable</string>
     <string name="codex_disable">Disable</string>
     <string name="codex_clear">Clear</string>
+    <string name="chat_file_preview_title">File preview</string>
+    <string name="chat_file_preview_loading">Loading file…</string>
+    <string name="chat_file_preview_unavailable">This file could not be previewed.</string>
+    <string name="chat_file_preview_copy_path">Copy path</string>
+    <string name="chat_file_preview_copy_contents">Copy contents</string>
     <string name="sessions_loading">Loading sessions…</string>
     <string name="sessions_status_awaiting_command">Awaiting reply</string>
     <string name="sessions_status_awaiting_skip">Waiting</string>

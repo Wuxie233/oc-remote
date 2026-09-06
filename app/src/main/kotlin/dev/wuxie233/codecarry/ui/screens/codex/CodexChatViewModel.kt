@@ -71,6 +71,7 @@ data class CodexChatUiState(
     val files: List<CodexFileMatch> = emptyList(),
     val attachmentsLoading: Boolean = false,
     val attachmentsError: String? = null,
+    val filePreview: CodexFilePreviewState? = null,
 )
 
 data class CodexSendResult(val content: String, val accepted: Boolean, val attachmentIds: Set<String> = emptySet())
@@ -587,6 +588,48 @@ class CodexChatViewModel @Inject constructor(
     }
 
     suspend fun loadRemoteImage(path: String): ByteArray = requireClient().readImageFile(path)
+
+    fun openWorkspaceFile(path: String) {
+        _uiState.update { it.copy(filePreview = CodexFilePreviewState(path = path, isLoading = true)) }
+        loadFilePreview(path)
+    }
+
+    fun retryFilePreview() {
+        val path = _uiState.value.filePreview?.path ?: return
+        loadFilePreview(path)
+    }
+
+    fun dismissFilePreview() {
+        _uiState.update { it.copy(filePreview = null) }
+    }
+
+    private fun loadFilePreview(path: String) {
+        viewModelScope.launch {
+            _uiState.update { state ->
+                state.copy(filePreview = CodexFilePreviewState(path = path, isLoading = true))
+            }
+            try {
+                val contents = requireClient().readTextFile(path)
+                _uiState.update { state ->
+                    if (state.filePreview?.path != path) state
+                    else state.copy(filePreview = CodexFilePreviewState(path = path, isLoading = false, contents = contents))
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                _uiState.update { state ->
+                    if (state.filePreview?.path != path) state
+                    else state.copy(
+                        filePreview = CodexFilePreviewState(
+                            path = path,
+                            isLoading = false,
+                            error = error.message ?: "Could not read remote file",
+                        ),
+                    )
+                }
+            }
+        }
+    }
 
     fun loadSkills() {
         viewModelScope.launch {

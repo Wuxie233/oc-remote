@@ -312,6 +312,30 @@ class CodexChatInteractionTest {
     }
 
     @Test
+    fun `file preview error keeps the path copyable`() {
+        val loading = CodexFilePreviewState(path = "/workspace/handoff.txt", isLoading = true)
+        val failed = CodexFilePreviewState(
+            path = "/workspace/handoff.txt",
+            isLoading = false,
+            error = "Remote file exceeds 1 MiB",
+        )
+        val ready = CodexFilePreviewState(
+            path = "/workspace/handoff.txt",
+            isLoading = false,
+            contents = "hello",
+        )
+
+        assertEquals("/workspace/handoff.txt", loading.path)
+        assertTrue(loading.isLoading)
+        assertNull(loading.error)
+        assertEquals("/workspace/handoff.txt", failed.path)
+        assertEquals("Remote file exceeds 1 MiB", failed.error)
+        assertNull(failed.contents)
+        assertEquals("hello", ready.contents)
+        assertNull(ready.error)
+    }
+
+    @Test
     fun `rejected reply unlocks the same request id`() {
         val first = codexRequestUnlockToken("string:input-1", mapOf("string:input-1" to "rejected"))
         val same = codexRequestUnlockToken("string:input-1", mapOf("string:input-1" to "rejected"))

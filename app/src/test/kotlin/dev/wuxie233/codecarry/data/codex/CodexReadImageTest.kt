@@ -48,6 +48,37 @@ class CodexReadImageTest {
         } finally { client.close() }
     }
 
+    @Test fun `text reads decode utf8 payload and reject binary or oversized files`() = runTest {
+        val wire = ImageWire()
+        val client = CodexAppServerClient(wire, json, scope = backgroundScope)
+        try {
+            val connect = async { client.connect() }
+            val init = wire.request()
+            wire.incoming.send("""{"id":${init["id"]},"result":{"userAgent":"test"}}""")
+            connect.await()
+            wire.outgoing.receive()
+
+            val text = async { client.readTextFile("/workspace/handoff.txt") }
+            val request = wire.request()
+            assertEquals("fs/readFile", request["method"]?.jsonPrimitive?.content)
+            assertEquals("/workspace/handoff.txt", request["params"]?.jsonObject?.get("path")?.jsonPrimitive?.content)
+            wire.result(request, buildJsonObject {
+                put("dataBase64", java.util.Base64.getEncoder().encodeToString("hello preview".toByteArray()))
+            })
+            assertEquals("hello preview", text.await())
+
+            val binary = async { runCatching { client.readTextFile("/workspace/image.bin") } }
+            wire.result(wire.request(), buildJsonObject { put("dataBase64", "AAH+/w==") })
+            assertTrue(binary.await().exceptionOrNull() is CodexRemoteFileNotTextException)
+
+            val oversized = async { runCatching { client.readTextFile("/workspace/huge.txt", maxBytes = 8) } }
+            wire.result(wire.request(), buildJsonObject {
+                put("dataBase64", java.util.Base64.getEncoder().encodeToString(ByteArray(16) { 'A'.code.toByte() }))
+            })
+            assertTrue(oversized.await().isFailure)
+        } finally { client.close() }
+    }
+
     @Test fun `image read rejects malformed and oversized data and surfaces RPC errors`() = runTest {
         val wire = ImageWire()
         val client = CodexAppServerClient(wire, json, scope = backgroundScope)

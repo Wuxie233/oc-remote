@@ -81,6 +81,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import java.io.IOException
 import java.net.URLDecoder
 import java.util.UUID
 import javax.inject.Inject
@@ -1576,6 +1577,49 @@ class ChatViewModel @Inject constructor(
 
     /** Get the session directory for building file:// URLs */
     fun getSessionDirectory(): String? = sessionDirectory
+
+    private val _filePreview = MutableStateFlow<ChatFilePreviewState?>(null)
+    val filePreview: StateFlow<ChatFilePreviewState?> = _filePreview
+
+    fun openWorkspaceFile(path: String) {
+        _filePreview.value = ChatFilePreviewState(path = path, isLoading = true)
+        loadFilePreview(path)
+    }
+
+    fun retryFilePreview() {
+        val path = _filePreview.value?.path ?: return
+        loadFilePreview(path)
+    }
+
+    fun dismissFilePreview() {
+        _filePreview.value = null
+    }
+
+    private fun loadFilePreview(path: String) {
+        viewModelScope.launch {
+            _filePreview.value = ChatFilePreviewState(path = path, isLoading = true)
+            try {
+                val contents = if (isDsh) {
+                    throw IOException("DSH does not expose remote file contents over this connection")
+                } else {
+                    api.readFileText(conn, path, directory = sessionDirectory)
+                }
+                if (_filePreview.value?.path == path) {
+                    _filePreview.value = ChatFilePreviewState(path = path, isLoading = false, contents = contents)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                if (_filePreview.value?.path == path) {
+                    _filePreview.value = ChatFilePreviewState(
+                        path = path,
+                        isLoading = false,
+                        error = error.message ?: "Could not read remote file",
+                    )
+                }
+            }
+        }
+    }
 
     fun sendMessage(text: String, attachments: List<PromptPart> = emptyList(), onResult: (Boolean) -> Unit = {}) {
         if (text.isBlank() && attachments.isEmpty()) {

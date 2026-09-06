@@ -40,6 +40,7 @@ import dev.wuxie233.codecarry.R
 import dev.wuxie233.codecarry.data.codex.CodexFileChange
 import dev.wuxie233.codecarry.data.codex.CodexThreadItem
 import dev.wuxie233.codecarry.data.codex.CodexTurnPlan
+import dev.wuxie233.codecarry.ui.screens.chat.ChatMarkdownLinkEnvironment
 import dev.wuxie233.codecarry.ui.screens.chat.MessageMarkdownContent
 import dev.wuxie233.codecarry.ui.screens.chat.ProcessDisclosureRow
 import dev.wuxie233.codecarry.ui.screens.chat.isAmoledTheme
@@ -52,6 +53,8 @@ internal fun CodexTimelineItem(
     item: CodexThreadItem,
     onOpenThread: (String) -> Unit,
     loadRemoteImage: suspend (String) -> ByteArray = { error("Remote image reader unavailable") },
+    workspaceCwd: String? = null,
+    onOpenWorkspaceFile: (String) -> Unit = {},
 ) {
     val amoled = isAmoledTheme()
     when (item.type) {
@@ -64,16 +67,18 @@ internal fun CodexTimelineItem(
                 tonalElevation = if (amoled) 0.dp else 1.dp,
             ) {
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                    if (!item.text.isNullOrBlank()) MessageMarkdownContent(
-                        markdown = item.text,
-                        textColor = if (amoled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onPrimaryContainer,
-                        isUser = true,
-                    )
+                    if (!item.text.isNullOrBlank()) ChatMarkdownLinkEnvironment(workspaceCwd, onOpenWorkspaceFile) {
+                        MessageMarkdownContent(
+                            markdown = item.text,
+                            textColor = if (amoled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onPrimaryContainer,
+                            isUser = true,
+                        )
+                    }
                     CodexTimelineImages(item, loadRemoteImage)
                 }
             }
         }
-        "agentMessage" -> CodexTimelineMarkdown(item.text.orEmpty())
+        "agentMessage" -> CodexTimelineMarkdown(item.text.orEmpty(), workspaceCwd, onOpenWorkspaceFile)
         "reasoning" -> CodexDisclosure(
             key = item.id ?: item.type,
             title = stringResource(R.string.codex_thinking),
@@ -81,12 +86,12 @@ internal fun CodexTimelineItem(
             status = item.status,
         ) {
             val summary = item.reasoningSummary.joinToString("\n\n").ifBlank { item.text.orEmpty() }
-            if (summary.isNotBlank()) CodexTimelineMarkdown(summary)
+            if (summary.isNotBlank()) CodexTimelineMarkdown(summary, workspaceCwd, onOpenWorkspaceFile)
             val content = item.reasoningContent.joinToString("\n\n")
-            if (content.isNotBlank() && content != summary) CodexTimelineMarkdown(content)
+            if (content.isNotBlank() && content != summary) CodexTimelineMarkdown(content, workspaceCwd, onOpenWorkspaceFile)
         }
         "plan" -> CodexDisclosure(item.id ?: item.type, stringResource(R.string.codex_timeline_plan), item.status) {
-            CodexTimelineMarkdown(item.text.orEmpty())
+            CodexTimelineMarkdown(item.text.orEmpty(), workspaceCwd, onOpenWorkspaceFile)
         }
         "fileChange" -> CodexDisclosure(item.id ?: item.type, stringResource(R.string.codex_tool_file_changes), item.status) {
             if (item.fileChanges.isEmpty()) Text(stringResource(R.string.codex_timeline_details_unavailable))
@@ -110,7 +115,7 @@ internal fun CodexTimelineItem(
             CodexDisclosure(item.id ?: item.type, title, item.status) {
                 val collaboration = item.collabAgentCall
                 if (collaboration != null) {
-                    collaboration.prompt?.takeIf { it.isNotBlank() }?.let { CodexTimelineMarkdown(it) }
+                    collaboration.prompt?.takeIf { it.isNotBlank() }?.let { CodexTimelineMarkdown(it, workspaceCwd, onOpenWorkspaceFile) }
                     collaboration.receiverThreadIds.distinct().forEach { threadId ->
                         val state = collaboration.agentsStates[threadId]
                         TextButton(onClick = { onOpenThread(threadId) }) {
@@ -120,7 +125,7 @@ internal fun CodexTimelineItem(
                                 state?.status?.let { Text(codexTimelineStatus(it), style = MaterialTheme.typography.labelSmall) }
                             }
                         }
-                        state?.message?.takeIf { it.isNotBlank() }?.let { CodexTimelineMarkdown(it) }
+                        state?.message?.takeIf { it.isNotBlank() }?.let { CodexTimelineMarkdown(it, workspaceCwd, onOpenWorkspaceFile) }
                     }
                 } else {
                     val details = item.output ?: item.text ?: item.raw.toString()
@@ -148,9 +153,14 @@ private fun CodexSubAgentActivityRow(item: CodexThreadItem, onOpenThread: (Strin
 }
 
 @Composable
-internal fun CodexTurnPlanCard(plan: CodexTurnPlan, modifier: Modifier = Modifier) {
+internal fun CodexTurnPlanCard(
+    plan: CodexTurnPlan,
+    modifier: Modifier = Modifier,
+    workspaceCwd: String? = null,
+    onOpenWorkspaceFile: (String) -> Unit = {},
+) {
     CodexDisclosure("turn-plan", stringResource(R.string.codex_timeline_plan), modifier = modifier, initiallyExpanded = true) {
-        plan.explanation?.takeIf { it.isNotBlank() }?.let { CodexTimelineMarkdown(it) }
+        plan.explanation?.takeIf { it.isNotBlank() }?.let { CodexTimelineMarkdown(it, workspaceCwd, onOpenWorkspaceFile) }
         plan.steps.forEach { step ->
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.Top) {
                 if (step.status == "completed") Icon(Icons.Default.Check, contentDescription = stringResource(R.string.codex_timeline_completed))
@@ -232,13 +242,19 @@ private fun CodexDisclosure(
 }
 
 @Composable
-private fun CodexTimelineMarkdown(text: String) {
-    if (text.isNotBlank()) MessageMarkdownContent(
-        markdown = text,
-        textColor = MaterialTheme.colorScheme.onSurface,
-        isUser = false,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
-    )
+private fun CodexTimelineMarkdown(
+    text: String,
+    workspaceCwd: String? = null,
+    onOpenWorkspaceFile: (String) -> Unit = {},
+) {
+    if (text.isNotBlank()) ChatMarkdownLinkEnvironment(workspaceCwd, onOpenWorkspaceFile) {
+        MessageMarkdownContent(
+            markdown = text,
+            textColor = MaterialTheme.colorScheme.onSurface,
+            isUser = false,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
+        )
+    }
 }
 
 @Composable

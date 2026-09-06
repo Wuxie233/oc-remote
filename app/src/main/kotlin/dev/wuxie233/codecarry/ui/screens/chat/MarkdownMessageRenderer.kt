@@ -183,9 +183,7 @@ private object MarkdownWebViewPool {
         view.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val uri = request?.url ?: return true
-                if (isExternalMessageLinkScheme(uri.scheme)) {
-                    onLink(uri.toString())
-                }
+                onLink(uri.toString())
                 return true
             }
         }
@@ -339,7 +337,9 @@ private class MarkdownJavascriptBridge(
 
 internal fun openMessageLink(context: android.content.Context, url: String) {
     runCatching {
-        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, url.toUri())
+        val uri = url.toUri()
+        if (!isExternalMessageLinkScheme(uri.scheme)) return
+        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, uri)
         intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(intent)
     }
