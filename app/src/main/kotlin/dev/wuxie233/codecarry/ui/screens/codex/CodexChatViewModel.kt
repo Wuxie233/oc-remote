@@ -468,6 +468,11 @@ class CodexChatViewModel @Inject constructor(
     }
 
     fun selectEffort(effort: String) {
+        val advertised = _uiState.value.selectedModel
+            ?.supportedReasoningEfforts
+            .orEmpty()
+            .map { it.reasoningEffort }
+        if (effort !in advertised) return
         _uiState.update { it.copy(selectedEffort = effort) }
     }
 

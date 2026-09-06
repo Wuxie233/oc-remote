@@ -42,4 +42,32 @@ class DshModelSelectionProjectionTest {
         assertFalse(isCurrentDshModelReceipt(1, 4, 2, 4, true))
         assertFalse(isCurrentDshModelReceipt(2, 4, 2, 4, false))
     }
+
+    @Test
+    fun `keep a still advertised effort`() {
+        assertEquals("high", compatibleDshReasoningEffort("high", listOf("low", "high"), "low"))
+    }
+
+    @Test
+    fun `fallback to default when current effort is not advertised`() {
+        assertEquals("low", compatibleDshReasoningEffort("high", listOf("low", "medium"), "low"))
+    }
+
+    @Test
+    fun `omit effort when the model advertises none`() {
+        assertNull(compatibleDshReasoningEffort("high", emptyList(), "low"))
+        assertNull(compatibleDshReasoningEffort("high", emptyList(), null))
+    }
+
+    @Test
+    fun `empty current uses default when advertised`() {
+        assertEquals("low", compatibleDshReasoningEffort(null, listOf("low", "high"), "low"))
+        assertEquals("low", compatibleDshReasoningEffort("", listOf("low", "high"), "low"))
+    }
+
+    @Test
+    fun `unlisted default or first advertised when neither current nor default is advertised`() {
+        assertEquals("medium", compatibleDshReasoningEffort("high", listOf("x", "y"), "medium"))
+        assertEquals("x", compatibleDshReasoningEffort("high", listOf("x", "y"), null))
+    }
 }

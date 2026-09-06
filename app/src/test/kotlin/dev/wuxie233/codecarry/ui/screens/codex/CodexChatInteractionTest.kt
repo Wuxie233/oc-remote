@@ -4,6 +4,8 @@ import dev.wuxie233.codecarry.data.codex.CodexServerRequest
 import dev.wuxie233.codecarry.data.codex.CodexThread
 import dev.wuxie233.codecarry.data.codex.CodexThreadItem
 import dev.wuxie233.codecarry.data.codex.CodexTurn
+import dev.wuxie233.codecarry.data.codex.requestKey
+import dev.wuxie233.codecarry.ui.screens.chat.ChatResponseDockKind
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -12,8 +14,10 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 import androidx.lifecycle.Lifecycle
 
@@ -217,7 +221,114 @@ class CodexChatInteractionTest {
         assertEquals("client-message-1", tracker.begin("another message"))
     }
 
+    @Test
+    fun `response dock lists every pending approval and question`() {
+        val approval = approvalRequest(
+            """{"id":"approval-1","method":"item/commandExecution/requestApproval","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"item-1","command":"ls"}}""",
+        )
+        val firstQuestion = userInputRequest(
+            """{"id":"input-1","method":"item/tool/requestUserInput","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"item-1","questions":[{"id":"q1","header":"One","question":"Pick one","options":[{"label":"A","description":"First"}]}]}}""",
+        )
+        val secondQuestion = userInputRequest(
+            """{"id":"input-2","method":"item/tool/requestUserInput","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"item-2","questions":[{"id":"q2","header":"Two","question":"Pick two","options":[{"label":"B","description":"Second"}]}]}}""",
+        )
+        val elicitation = requireNotNull(
+            CodexServerRequest.fromJson(
+                Json.parseToJsonElement(
+                    """{"id":"elicit-1","method":"mcpServer/elicitation/request","params":{"serverName":"docs","mode":"form"}}""",
+                ).jsonObject,
+            ),
+        )
+
+        val mixed = buildCodexResponseDockItems(listOf(firstQuestion, approval, secondQuestion, elicitation))
+        val items = buildCodexResponseDockItems(listOf(approval, firstQuestion, secondQuestion, elicitation))
+
+        assertEquals(
+            listOf(
+                ChatResponseDockKind.Question,
+                ChatResponseDockKind.Permission,
+                ChatResponseDockKind.Question,
+                ChatResponseDockKind.Question,
+            ),
+            mixed.map { it.kind },
+        )
+        assertEquals(
+            listOf(firstQuestion, approval, secondQuestion, elicitation).map { it.id.requestKey() },
+            mixed.map { it.ownershipId },
+        )
+        assertEquals(
+            listOf(
+                ChatResponseDockKind.Permission,
+                ChatResponseDockKind.Question,
+                ChatResponseDockKind.Question,
+                ChatResponseDockKind.Question,
+            ),
+            items.map { it.kind },
+        )
+        assertEquals(
+            listOf(approval, firstQuestion, secondQuestion, elicitation).map { it.id.requestKey() },
+            items.map { it.ownershipId },
+        )
+        assertEquals(approval, items[0].codexRequest(listOf(approval, firstQuestion, secondQuestion, elicitation)))
+        assertEquals(secondQuestion, items[2].codexRequest(listOf(approval, firstQuestion, secondQuestion, elicitation)))
+    }
+
+    @Test
+    fun `single select option submits labeled answers immediately`() {
+        val questions = userInputRequest(
+            """{"id":"input-1","method":"item/tool/requestUserInput","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"item-1","questions":[{"id":"target","header":"Target","question":"Where?","options":[{"label":"Local","description":"Here"},{"label":"Remote","description":"There"}]}]}}""",
+        ).userInput!!.questions
+
+        assertTrue(codexUserInputAllowsInstantSubmit(questions))
+        assertEquals(
+            mapOf("target" to listOf("Local")),
+            codexInstantOptionAnswer(questions, "target", "Local"),
+        )
+        assertNull(codexInstantCustomAnswer(questions, "target", "somewhere else"))
+    }
+
+    @Test
+    fun `custom and batch questions require explicit submit payloads`() {
+        val custom = userInputRequest(
+            """{"id":"input-1","method":"item/tool/requestUserInput","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"item-1","questions":[{"id":"target","header":"Target","question":"Where?","options":[{"label":"Local","description":"Here"}],"isOther":true}]}}""",
+        ).userInput!!.questions
+        val batch = userInputRequest(
+            """{"id":"input-2","method":"item/tool/requestUserInput","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"item-2","questions":[{"id":"one","header":"One","question":"First","options":[{"label":"A","description":""}]},{"id":"two","header":"Two","question":"Second","options":[{"label":"B","description":""}]}]}}""",
+        ).userInput!!.questions
+
+        assertTrue(codexUserInputNeedsExplicitSubmit(custom))
+        assertNull(codexInstantOptionAnswer(custom, "target", "Local"))
+        assertEquals(
+            mapOf("target" to listOf("somewhere else")),
+            codexUserInputAnswerPayload(custom, mapOf("target" to listOf(" somewhere else "))),
+        )
+        assertTrue(codexUserInputNeedsExplicitSubmit(batch))
+        assertFalse(codexUserInputDraftComplete(batch, mapOf("one" to listOf("A"))))
+        assertTrue(codexUserInputDraftComplete(batch, mapOf("one" to listOf("A"), "two" to listOf("B"))))
+        assertEquals(
+            mapOf("one" to listOf("A"), "two" to listOf("B")),
+            codexUserInputAnswerPayload(batch, mapOf("one" to listOf("A"), "two" to listOf("B"))),
+        )
+    }
+
+    @Test
+    fun `rejected reply unlocks the same request id`() {
+        val first = codexRequestUnlockToken("string:input-1", mapOf("string:input-1" to "rejected"))
+        val same = codexRequestUnlockToken("string:input-1", mapOf("string:input-1" to "rejected"))
+        val retried = codexRequestUnlockToken("string:input-1", mapOf("string:input-1" to "still rejected"))
+        val other = codexRequestUnlockToken("string:input-2", mapOf("string:input-1" to "rejected"))
+
+        assertTrue(first != 0)
+        assertEquals(first, same)
+        assertNotEquals(first, retried)
+        assertEquals(0, other)
+    }
+
     private fun approvalRequest(raw: String): CodexServerRequest = requireNotNull(
+        CodexServerRequest.fromJson(Json.parseToJsonElement(raw).jsonObject),
+    )
+
+    private fun userInputRequest(raw: String): CodexServerRequest = requireNotNull(
         CodexServerRequest.fromJson(Json.parseToJsonElement(raw).jsonObject),
     )
 }

@@ -639,6 +639,7 @@ data class CodexToolUserInputQuestion(
     val options: List<CodexToolUserInputOption> = emptyList(),
     val isOther: Boolean = false,
     val isSecret: Boolean = false,
+    val multiple: Boolean = false,
     val extra: JsonObject = JsonObject(emptyMap()),
 ) {
     companion object {
@@ -653,7 +654,19 @@ data class CodexToolUserInputQuestion(
                 },
             isOther = value.boolean("isOther") ?: false,
             isSecret = value.boolean("isSecret") ?: false,
-            extra = value.without("id", "header", "question", "options", "isOther", "isSecret"),
+            multiple = value.boolean("multiple")
+                ?: value.boolean("multiSelect")
+                ?: false,
+            extra = value.without(
+                "id",
+                "header",
+                "question",
+                "options",
+                "isOther",
+                "isSecret",
+                "multiple",
+                "multiSelect",
+            ),
         )
     }
 }

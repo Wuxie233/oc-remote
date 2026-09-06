@@ -5,17 +5,17 @@ package dev.wuxie233.codecarry.ui.screens.codex
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.imePadding
@@ -23,21 +23,27 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.RadioButtonChecked
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.TrackChanges
+import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -53,24 +59,28 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import dev.wuxie233.codecarry.R
@@ -79,9 +89,11 @@ import androidx.lifecycle.LifecycleEventObserver
 import dev.wuxie233.codecarry.data.codex.CodexApprovalKind
 import dev.wuxie233.codecarry.data.codex.CodexMemoryMode
 import dev.wuxie233.codecarry.data.codex.CodexServerRequest
-import dev.wuxie233.codecarry.ui.screens.chat.chatComposerPrimaryWidth
+import dev.wuxie233.codecarry.data.codex.CodexToolUserInputQuestion
 import dev.wuxie233.codecarry.ui.screens.chat.ChatHeader
-import dev.wuxie233.codecarry.ui.screens.chat.chatTextOverflow
+import dev.wuxie233.codecarry.ui.screens.chat.ChatResponseDock
+import dev.wuxie233.codecarry.ui.screens.chat.chatComposerPrimaryWidth
+import dev.wuxie233.codecarry.ui.screens.chat.isAmoledTheme
 import dev.wuxie233.codecarry.data.codex.requestKey
 import dev.wuxie233.codecarry.ui.components.ErrorStateCard
 import dev.wuxie233.codecarry.ui.components.LoadingStateCard
@@ -207,25 +219,37 @@ fun CodexChatScreen(
             )
         },
         bottomBar = {
-            Column(
+            val dockItems = remember(state.pendingRequests) {
+                buildCodexResponseDockItems(state.pendingRequests)
+            }
+            ChatResponseDock(
+                items = dockItems,
                 modifier = Modifier
                     .chatComposerPrimaryWidth()
                     .fillMaxWidth()
                     .navigationBarsPadding()
                     .imePadding()
                     .padding(horizontal = 12.dp, vertical = 8.dp),
-            ) {
-                state.pendingRequests.firstOrNull()?.let { request ->
-                    val requestKey = request.id.requestKey()
-                    Column(Modifier.fillMaxWidth().heightIn(max = 280.dp).verticalScroll(rememberScrollState())) {
-                        Text(stringResource(R.string.codex_chat_pending_count, state.pendingRequests.size), style = MaterialTheme.typography.labelMedium)
-                        state.requestErrors[requestKey]?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                        key(requestKey) {
+                responseContent = { item ->
+                    val request = item.codexRequest(state.pendingRequests)
+                    if (request != null) {
+                        val requestKey = request.id.requestKey()
+                        Column(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                            if (item == dockItems.first()) {
+                                Text(
+                                    stringResource(R.string.codex_chat_pending_count, state.pendingRequests.size),
+                                    style = MaterialTheme.typography.labelMedium,
+                                )
+                            }
+                            state.requestErrors[requestKey]?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                             Box {
-                                androidx.compose.runtime.CompositionLocalProvider(LocalCodexRequestEnabled provides (requestKey !in state.replyingRequestIds)) {
+                                androidx.compose.runtime.CompositionLocalProvider(
+                                    LocalCodexRequestEnabled provides (requestKey !in state.replyingRequestIds),
+                                ) {
                                     CodexRequestCard(
                                         request = request,
                                         thread = state.thread,
+                                        unlockToken = codexRequestUnlockToken(requestKey, state.requestErrors),
                                         onDecision = { viewModel.answerApproval(request, it) },
                                         onAnswer = { viewModel.answerUserInput(request, it) },
                                         onElicitation = { action, content -> viewModel.answerElicitation(request, action, content) },
@@ -234,60 +258,79 @@ fun CodexChatScreen(
                                     )
                                 }
                                 if (requestKey in state.replyingRequestIds) {
-                                    Box(Modifier.matchParentSize().background(MaterialTheme.colorScheme.surface.copy(alpha = 0.75f)).clickable { }, contentAlignment = Alignment.Center) {
+                                    Box(
+                                        Modifier
+                                            .matchParentSize()
+                                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.75f))
+                                            .clickable { },
+                                        contentAlignment = Alignment.Center,
+                                    ) {
                                         CircularProgressIndicator(Modifier.size(24.dp))
                                     }
                                 }
                             }
                         }
                     }
-                }
-                if (state.isSendConfirmationPending) {
-                    Column(
-                        modifier = Modifier.padding(bottom = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            stringResource(R.string.codex_send_confirmation_pending),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(onClick = viewModel::recheckPendingSend, enabled = !state.isSending) {
-                                Text(stringResource(R.string.codex_check_message_status))
-                            }
-                            TextButton(onClick = viewModel::allowPendingResend, enabled = !state.isSending) {
-                                Text(stringResource(R.string.codex_allow_resend))
+                },
+                composerContent = {
+                    if (state.isSendConfirmationPending) {
+                        Column(
+                            modifier = Modifier.padding(bottom = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                stringResource(R.string.codex_send_confirmation_pending),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(onClick = viewModel::recheckPendingSend, enabled = !state.isSending) {
+                                    Text(stringResource(R.string.codex_check_message_status))
+                                }
+                                TextButton(onClick = viewModel::allowPendingResend, enabled = !state.isSending) {
+                                    Text(stringResource(R.string.codex_allow_resend))
+                                }
                             }
                         }
                     }
-                }
-                if (state.attachmentLimitReached) Text(stringResource(R.string.codex_chat_payload_limit), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                CodexAttachmentChips(attachments, enabled = !state.isSending && !state.isSendConfirmationPending, onRemove = viewModel::removeAttachment)
-                CodexComposerSurface(
-                    value = draft,
-                    onValueChange = viewModel::updateDraft,
-                    placeholder = stringResource(if (state.activeTurnId != null) R.string.codex_chat_steer_hint else R.string.codex_message_hint),
-                    canSend = (draft.isNotBlank() || attachments.isNotEmpty()) &&
-                        !state.isLoading && state.isConnected && state.thread != null &&
-                        !state.isSending && !state.isAwaitingAuthoritativeTurn && !state.isSendConfirmationPending,
-                    isSending = state.isSending || state.isAwaitingAuthoritativeTurn,
-                    sendLabel = stringResource(if (state.activeTurnId != null) R.string.codex_chat_steer else R.string.chat_send),
-                    onSend = ::submitDraft,
-                    controls = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CodexAttachmentPicker(
-                                enabled = !state.isSending && !state.isSendConfirmationPending && attachments.size < 8,
-                                skills = state.skills, files = state.files,
-                                loading = state.attachmentsLoading, error = state.attachmentsError,
-                                onLoadSkills = viewModel::loadSkills, onSearchFiles = viewModel::searchFiles,
-                                onAdd = viewModel::addAttachment,
+                    if (state.attachmentLimitReached) {
+                        Text(
+                            stringResource(R.string.codex_chat_payload_limit),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    CodexAttachmentChips(
+                        attachments,
+                        enabled = !state.isSending && !state.isSendConfirmationPending,
+                        onRemove = viewModel::removeAttachment,
+                    )
+                    CodexComposerSurface(
+                        value = draft,
+                        onValueChange = viewModel::updateDraft,
+                        placeholder = stringResource(if (state.activeTurnId != null) R.string.codex_chat_steer_hint else R.string.codex_message_hint),
+                        canSend = (draft.isNotBlank() || attachments.isNotEmpty()) &&
+                            !state.isLoading && state.isConnected && state.thread != null &&
+                            !state.isSending && !state.isAwaitingAuthoritativeTurn && !state.isSendConfirmationPending,
+                        isSending = state.isSending || state.isAwaitingAuthoritativeTurn,
+                        sendLabel = stringResource(if (state.activeTurnId != null) R.string.codex_chat_steer else R.string.chat_send),
+                        onSend = ::submitDraft,
+                        controls = {
+                            CodexComposerControlRow(
+                                state = state,
+                                attachmentsEnabled = !state.isSending &&
+                                    !state.isSendConfirmationPending &&
+                                    attachments.size < 8,
+                                onAddAttachment = viewModel::addAttachment,
+                                onLoadSkills = viewModel::loadSkills,
+                                onSearchFiles = viewModel::searchFiles,
+                                onModel = viewModel::selectModel,
+                                onEffort = viewModel::selectEffort,
                             )
-                            CodexModelControls(state, viewModel::selectModel, viewModel::selectEffort)
-                        }
-                    },
-                )
-            }
+                        },
+                    )
+                },
+            )
         },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
@@ -405,6 +448,39 @@ internal fun codexChatVisibilityForEvent(event: Lifecycle.Event): Boolean? = whe
 }
 
 @Composable
+internal fun CodexComposerControlRow(
+    state: CodexChatUiState,
+    attachmentsEnabled: Boolean,
+    onAddAttachment: (CodexComposerAttachment) -> Unit,
+    onLoadSkills: () -> Unit,
+    onSearchFiles: (String) -> Unit,
+    onModel: (dev.wuxie233.codecarry.data.codex.CodexModel) -> Unit,
+    onEffort: (String) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            CodexModelControls(state, onModel, onEffort)
+        }
+        CodexAttachmentPicker(
+            enabled = attachmentsEnabled,
+            skills = state.skills,
+            files = state.files,
+            loading = state.attachmentsLoading,
+            error = state.attachmentsError,
+            onLoadSkills = onLoadSkills,
+            onSearchFiles = onSearchFiles,
+            onAdd = onAddAttachment,
+        )
+    }
+}
+
+@Composable
 internal fun CodexModelControls(
     state: CodexChatUiState,
     onModel: (dev.wuxie233.codecarry.data.codex.CodexModel) -> Unit,
@@ -413,59 +489,94 @@ internal fun CodexModelControls(
     var modelsOpen by remember { mutableStateOf(false) }
     var effortOpen by remember { mutableStateOf(false) }
     if (state.models.isEmpty()) return
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Box(Modifier.weight(1f)) {
-            TextButton(onClick = { modelsOpen = true }) {
-                Text(state.selectedModel?.displayName?.ifBlank { state.selectedModel.model } ?: stringResource(R.string.codex_model), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+    val modelLabel = state.selectedModel?.displayName?.ifBlank { state.selectedModel.model }
+        ?: stringResource(R.string.codex_model)
+    Box {
+        CodexComposerChip(
+            label = modelLabel,
+            onClick = { modelsOpen = true },
+        )
+        DropdownMenu(expanded = modelsOpen, onDismissRequest = { modelsOpen = false }) {
+            state.models.filterNot { it.hidden }.forEach { model ->
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(model.displayName.ifBlank { model.model })
+                            if (model.description.isNotBlank()) {
+                                Text(model.description, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                            }
+                        }
+                    },
+                    leadingIcon = if (model == state.selectedModel) {
+                        { Icon(Icons.Default.Check, contentDescription = null) }
+                    } else null,
+                    onClick = { onModel(model); modelsOpen = false },
+                )
             }
-            DropdownMenu(expanded = modelsOpen, onDismissRequest = { modelsOpen = false }) {
-                state.models.filterNot { it.hidden }.forEach { model ->
+        }
+    }
+    val efforts = state.selectedModel?.supportedReasoningEfforts.orEmpty()
+    if (efforts.isNotEmpty()) {
+        Box {
+            CodexComposerChip(
+                label = state.selectedEffort?.replaceFirstChar { it.uppercase() }
+                    ?: stringResource(R.string.codex_reasoning),
+                onClick = { effortOpen = true },
+                emphasized = state.selectedEffort != null,
+            )
+            DropdownMenu(expanded = effortOpen, onDismissRequest = { effortOpen = false }) {
+                efforts.forEach { option ->
                     DropdownMenuItem(
                         text = {
                             Column {
-                                Text(model.displayName.ifBlank { model.model })
-                                if (model.description.isNotBlank()) {
-                                    Text(model.description, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                                Text(option.reasoningEffort)
+                                if (option.description.isNotBlank()) {
+                                    Text(option.description, style = MaterialTheme.typography.bodySmall)
                                 }
                             }
                         },
-                        leadingIcon = if (model == state.selectedModel) {
+                        leadingIcon = if (option.reasoningEffort == state.selectedEffort) {
                             { Icon(Icons.Default.Check, contentDescription = null) }
                         } else null,
-                        onClick = { onModel(model); modelsOpen = false },
+                        onClick = { onEffort(option.reasoningEffort); effortOpen = false },
                     )
                 }
             }
         }
-        val efforts = state.selectedModel?.supportedReasoningEfforts.orEmpty()
-        if (efforts.isNotEmpty()) {
-            Box {
-                TextButton(onClick = { effortOpen = true }) {
-                    Icon(Icons.Default.Psychology, contentDescription = null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text(state.selectedEffort ?: stringResource(R.string.codex_reasoning), style = MaterialTheme.typography.labelSmall, maxLines = 1)
-                }
-                DropdownMenu(expanded = effortOpen, onDismissRequest = { effortOpen = false }) {
-                    efforts.forEach { option ->
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text(option.reasoningEffort)
-                                    if (option.description.isNotBlank()) Text(option.description, style = MaterialTheme.typography.bodySmall)
-                                }
-                            },
-                            leadingIcon = if (option.reasoningEffort == state.selectedEffort) {
-                                { Icon(Icons.Default.Check, contentDescription = null) }
-                            } else null,
-                            onClick = { onEffort(option.reasoningEffort); effortOpen = false },
-                        )
-                    }
-                }
-            }
-        }
+    }
+}
+
+@Composable
+private fun CodexComposerChip(
+    label: String,
+    onClick: () -> Unit,
+    emphasized: Boolean = false,
+) {
+    val color = if (emphasized) {
+        MaterialTheme.colorScheme.tertiary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+    }
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 3.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+            maxLines = 1,
+        )
+        Icon(
+            Icons.Default.UnfoldMore,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+        )
     }
 }
 
@@ -475,6 +586,7 @@ private val LocalCodexRequestEnabled = androidx.compose.runtime.compositionLocal
 private fun CodexRequestCard(
     request: CodexServerRequest,
     thread: dev.wuxie233.codecarry.data.codex.CodexThread?,
+    unlockToken: Int = 0,
     onDecision: (String) -> Unit,
     onAnswer: (Map<String, List<String>>) -> Unit,
     onElicitation: (String, JsonElement?) -> Unit,
@@ -494,20 +606,38 @@ private fun CodexRequestCard(
         color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.45f),
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                when {
-                    approval?.kind == CodexApprovalKind.COMMAND_EXECUTION -> stringResource(R.string.codex_request_run_command)
-                    approval?.kind == CodexApprovalKind.FILE_CHANGE -> stringResource(R.string.codex_request_apply_files)
-                    approval?.kind == CodexApprovalKind.PERMISSIONS -> stringResource(R.string.codex_request_grant_permissions)
-                    userInput != null -> userInput.questions.firstOrNull()?.header ?: stringResource(R.string.codex_request_needs_input)
-                    elicitation != null -> stringResource(
-                        R.string.codex_request_named_needs_input,
-                        request.params.string("serverName") ?: "MCP",
+            if (userInput != null) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        @Suppress("DEPRECATION")
+                        Icons.Default.HelpOutline,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary,
                     )
-                    else -> stringResource(R.string.codex_request)
-                },
-                style = MaterialTheme.typography.titleSmall,
-            )
+                    Text(
+                        text = stringResource(R.string.chat_question_label),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                }
+            } else {
+                Text(
+                    when {
+                        approval?.kind == CodexApprovalKind.COMMAND_EXECUTION -> stringResource(R.string.codex_request_run_command)
+                        approval?.kind == CodexApprovalKind.FILE_CHANGE -> stringResource(R.string.codex_request_apply_files)
+                        approval?.kind == CodexApprovalKind.PERMISSIONS -> stringResource(R.string.codex_request_grant_permissions)
+                        elicitation != null -> stringResource(
+                            R.string.codex_request_named_needs_input,
+                            request.params.string("serverName") ?: "MCP",
+                        )
+                        else -> stringResource(R.string.codex_request)
+                    },
+                    style = MaterialTheme.typography.titleSmall,
+                )
+            }
             approval?.command?.let {
                 Text(it, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
             }
@@ -564,7 +694,13 @@ private fun CodexRequestCard(
                     }
                 }
             } else if (userInput != null) {
-                UserInputQuestions(userInput.questions, onAnswer, onCancel)
+                UserInputQuestions(
+                    questions = userInput.questions,
+                    formKey = request.id.requestKey(),
+                    unlockToken = unlockToken,
+                    onAnswer = onAnswer,
+                    onCancel = onCancel,
+                )
             } else if (elicitation != null) {
                 McpElicitationContent(request, onElicitation, onOpenUrl)
             } else {
@@ -773,52 +909,331 @@ internal fun validateMcpFormValue(
 
 @Composable
 private fun UserInputQuestions(
-    questions: List<dev.wuxie233.codecarry.data.codex.CodexToolUserInputQuestion>,
+    questions: List<CodexToolUserInputQuestion>,
+    formKey: String,
+    unlockToken: Int,
     onAnswer: (Map<String, List<String>>) -> Unit,
     onCancel: () -> Unit,
 ) {
-    val values = remember { mutableStateMapOf<String, String>() }
-    questions.forEach { question ->
-        Text(question.question, style = MaterialTheme.typography.bodyMedium)
-        if (question.options.isNotEmpty()) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                question.options.forEach { option ->
-                    OutlinedButton(enabled = LocalCodexRequestEnabled.current,
-                        onClick = { values[question.id] = option.label },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Column(Modifier.fillMaxWidth()) {
-                            Text(option.label)
-                            if (option.description.isNotBlank()) Text(option.description, style = MaterialTheme.typography.bodySmall)
+    val isAmoled = isAmoledTheme()
+    val requestEnabled = LocalCodexRequestEnabled.current
+    val needsExplicitSubmit = codexUserInputNeedsExplicitSubmit(questions)
+    var submitted by rememberSaveable(formKey) { mutableStateOf(false) }
+    LaunchedEffect(formKey, unlockToken) {
+        if (unlockToken != 0) submitted = false
+    }
+    val answers = remember(formKey) { mutableStateMapOf<String, List<String>>() }
+    val contentColor = if (isAmoled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+    val accentColor = MaterialTheme.colorScheme.primary
+    val enabled = requestEnabled && !submitted
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            questions.forEach { question ->
+                if (question.header.isNotBlank()) {
+                    Text(
+                        text = question.header,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = contentColor,
+                    )
+                }
+                if (question.question.isNotBlank()) {
+                    Text(
+                        text = question.question,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = contentColor.copy(alpha = 0.8f),
+                    )
+                }
+                Spacer(Modifier.height(2.dp))
+                if (question.multiple) {
+                    question.options.forEach { option ->
+                        val checked = option.label in answers[question.id].orEmpty()
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (checked) accentColor.copy(alpha = 0.12f) else Color.Transparent)
+                                .toggleable(
+                                    value = checked,
+                                    enabled = enabled,
+                                    role = Role.Checkbox,
+                                    onValueChange = { isChecked ->
+                                        val current = answers[question.id].orEmpty().toMutableList()
+                                        if (isChecked) {
+                                            if (option.label !in current) current.add(option.label)
+                                        } else {
+                                            current.remove(option.label)
+                                        }
+                                        answers[question.id] = current.toList()
+                                    },
+                                )
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Checkbox(
+                                checked = checked,
+                                onCheckedChange = null,
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = accentColor,
+                                    uncheckedColor = contentColor.copy(alpha = 0.5f),
+                                ),
+                            )
+                            CodexQuestionOptionCopy(option.label, option.description, contentColor)
+                        }
+                    }
+                } else {
+                    question.options.forEach { option ->
+                        val isSelected = option.label in answers[question.id].orEmpty()
+                        Surface(
+                            onClick = {
+                                if (!enabled) return@Surface
+                                if (!needsExplicitSubmit) {
+                                    codexInstantOptionAnswer(questions, question.id, option.label)?.let { payload ->
+                                        submitted = true
+                                        onAnswer(payload)
+                                    }
+                                } else {
+                                    answers[question.id] = listOf(option.label)
+                                }
+                            },
+                            enabled = enabled,
+                            shape = RoundedCornerShape(8.dp),
+                            color = when {
+                                isSelected -> accentColor.copy(alpha = 0.12f)
+                                isAmoled -> Color.Black
+                                else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
+                            },
+                            border = if (!isSelected && isAmoled) {
+                                BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+                            } else null,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                Icon(
+                                    if (isSelected) Icons.Default.RadioButtonChecked else Icons.Default.RadioButtonUnchecked,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = if (isSelected) accentColor else accentColor.copy(alpha = 0.7f),
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = option.label,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = if (isSelected) accentColor else contentColor,
+                                    )
+                                    if (option.description.isNotBlank()) {
+                                        Text(
+                                            text = option.description,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = contentColor.copy(alpha = 0.6f),
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
+
+                if (question.allowsCustomAnswer()) {
+                    CodexCustomAnswerField(
+                        question = question,
+                        answers = answers,
+                        enabled = enabled,
+                        needsExplicitSubmit = needsExplicitSubmit,
+                        accentColor = accentColor,
+                        onInstantSubmit = { payload ->
+                            submitted = true
+                            onAnswer(payload)
+                        },
+                    )
+                }
             }
-        }
-        if (question.options.isEmpty() || question.isOther) {
-            OutlinedTextField(
-                value = values[question.id].orEmpty(),
-                onValueChange = { values[question.id] = it },
+
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                visualTransformation = if (question.isSecret) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = if (question.isSecret) KeyboardType.Password else KeyboardType.Text,
-                    autoCorrectEnabled = !question.isSecret,
-                ),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            ) {
+                TextButton(
+                    onClick = {
+                        submitted = true
+                        onCancel()
+                    },
+                    enabled = enabled,
+                ) {
+                    Text(stringResource(R.string.chat_dismiss), style = MaterialTheme.typography.labelMedium)
+                }
+                if (needsExplicitSubmit) {
+                    Button(
+                        onClick = {
+                            submitted = true
+                            onAnswer(codexUserInputAnswerPayload(questions, answers.toMap()))
+                        },
+                        enabled = enabled && codexUserInputDraftComplete(questions, answers),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                    ) {
+                        Text(stringResource(R.string.question_submit), style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+    }
+}
+
+@Composable
+private fun CodexQuestionOptionCopy(
+    label: String,
+    description: String,
+    contentColor: Color,
+) {
+    Column {
+        Text(text = label, style = MaterialTheme.typography.bodyMedium, color = contentColor)
+        if (description.isNotBlank()) {
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = contentColor.copy(alpha = 0.6f),
             )
         }
     }
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        TextButton(enabled = LocalCodexRequestEnabled.current, onClick = onCancel) { Text(stringResource(R.string.cancel)) }
-        Button(
-            onClick = { onAnswer(values.mapValues { listOf(it.value) }) },
-            enabled = LocalCodexRequestEnabled.current && (questions.all { values[it.id].orEmpty().isNotBlank() }),
-        ) { Text(stringResource(R.string.codex_submit)) }
+}
+
+@Composable
+private fun CodexCustomAnswerField(
+    question: CodexToolUserInputQuestion,
+    answers: SnapshotStateMap<String, List<String>>,
+    enabled: Boolean,
+    needsExplicitSubmit: Boolean,
+    accentColor: Color,
+    onInstantSubmit: (Map<String, List<String>>) -> Unit,
+) {
+    val currentAnswers = answers[question.id].orEmpty()
+    val customAnswer = currentAnswers.firstOrNull { answer -> question.options.none { it.label == answer } }
+    if (customAnswer != null) {
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = accentColor.copy(alpha = 0.12f),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(
+                    Icons.Default.RadioButtonChecked,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = accentColor,
+                )
+                Text(
+                    text = if (question.isSecret) "•".repeat(customAnswer.length.coerceAtLeast(1)) else customAnswer,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = accentColor,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(
+                    onClick = { if (enabled) answers[question.id] = emptyList() },
+                    enabled = enabled,
+                    modifier = Modifier.size(20.dp),
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = stringResource(R.string.chat_clear),
+                        modifier = Modifier.size(16.dp),
+                        tint = accentColor.copy(alpha = 0.7f),
+                    )
+                }
+            }
+        }
+        return
     }
+
+    var isEditingCustom by rememberSaveable(key = "qc_editing_${question.id}") { mutableStateOf(question.options.isEmpty()) }
+    var customText by rememberSaveable(key = "qc_customtext_${question.id}") { mutableStateOf("") }
+    if (!isEditingCustom) {
+        Surface(
+            onClick = { isEditingCustom = true },
+            enabled = enabled,
+            shape = RoundedCornerShape(8.dp),
+            color = Color.Transparent,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(
+                    Icons.Default.Edit,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = accentColor.copy(alpha = 0.7f),
+                )
+                Text(
+                    text = stringResource(R.string.question_custom_answer),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = accentColor.copy(alpha = 0.7f),
+                )
+            }
+        }
+        return
+    }
+
+    OutlinedTextField(
+        value = customText,
+        onValueChange = { customText = it },
+        enabled = enabled,
+        placeholder = {
+            Text(stringResource(R.string.chat_type_answer), style = MaterialTheme.typography.bodySmall)
+        },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+        textStyle = MaterialTheme.typography.bodySmall,
+        shape = RoundedCornerShape(8.dp),
+        visualTransformation = if (question.isSecret) PasswordVisualTransformation() else VisualTransformation.None,
+        keyboardOptions = KeyboardOptions(
+            keyboardType = if (question.isSecret) KeyboardType.Password else KeyboardType.Text,
+            autoCorrectEnabled = !question.isSecret,
+            imeAction = ImeAction.Send,
+        ),
+        trailingIcon = {
+            Row {
+                IconButton(
+                    onClick = {
+                        val trimmed = customText.trim()
+                        if (trimmed.isBlank()) return@IconButton
+                        if (!needsExplicitSubmit) {
+                            codexInstantCustomAnswer(questions = listOf(question), questionId = question.id, customText = trimmed)
+                                ?.let(onInstantSubmit)
+                        } else {
+                            answers[question.id] = listOf(trimmed)
+                            isEditingCustom = false
+                            customText = ""
+                        }
+                    },
+                    enabled = customText.isNotBlank() && enabled,
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.Send,
+                        contentDescription = stringResource(R.string.question_submit),
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                if (question.options.isNotEmpty()) {
+                    IconButton(onClick = { isEditingCustom = false; customText = "" }) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = stringResource(R.string.question_cancel),
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+            }
+        },
+    )
 }
 
 @Composable

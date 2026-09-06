@@ -22,6 +22,7 @@ import dev.wuxie233.codecarry.data.api.ModelLimit
 import dev.wuxie233.codecarry.data.api.toPermissionAsked
 import dev.wuxie233.codecarry.data.api.ServerConnection
 import dev.wuxie233.codecarry.data.dsh.DshModelSelection
+import dev.wuxie233.codecarry.data.dsh.compatibleDshReasoningEffort
 import dev.wuxie233.codecarry.data.dsh.dshProjectedModelSelection
 import dev.wuxie233.codecarry.data.dsh.isCurrentDshModelReceipt
 import dev.wuxie233.codecarry.data.dsh.DshAgentPresetEntry
@@ -259,6 +260,7 @@ class ChatViewModel @Inject constructor(
     private var dshSessionLoadJob: Job? = null
     private var dshModelCatalogDefault: DshModelSelection? = null
     private var dshModelCatalogGeneration: Long? = null
+    private val dshModelDefaultEfforts = mutableMapOf<Pair<String, String>, String?>()
     private var dshModelMutationRevision = 0L
     private var dshModelMutationPending = false
     private var dshModelObservedGeneration: Long? = null
@@ -983,6 +985,21 @@ class ChatViewModel @Inject constructor(
         applyDshModelSelection(selected)
     }
 
+    private fun compatibleEffortForDshModel(providerId: String, modelId: String, current: String?): String? {
+        val advertised = _allProviders.value
+            .firstOrNull { it.id == providerId }
+            ?.models
+            ?.get(modelId)
+            ?.variants
+            ?.keys
+            .orEmpty()
+        return compatibleDshReasoningEffort(
+            current,
+            advertised,
+            dshModelDefaultEfforts[providerId to modelId],
+        )
+    }
+
     private fun submitDshModelSelection(providerId: String, modelId: String, reasoning: String?) {
         val generation = dshReducer.state.value.generation
         val revision = ++dshModelMutationRevision
@@ -1019,11 +1036,13 @@ class ChatViewModel @Inject constructor(
             try {
                 val models = dshApi.sessionModels(dshConn)
                 if (generation != dshReducer.state.value.generation) return@launch
+                val defaultEfforts = mutableMapOf<Pair<String, String>, String?>()
                 val providers = models.groups.map { group ->
                     ProviderInfo(
                         id = group.id,
                         name = group.name,
                         models = group.models.associate { model ->
+                            defaultEfforts[group.id to model.id] = model.reasoning?.defaultEffort
                             model.id to ProviderModel(
                                 id = model.id,
                                 providerId = group.id,
@@ -1035,6 +1054,8 @@ class ChatViewModel @Inject constructor(
                         },
                     )
                 }
+                dshModelDefaultEfforts.clear()
+                dshModelDefaultEfforts.putAll(defaultEfforts)
                 _allProviders.value = providers
                 applyProviderFilter()
                 dshModelCatalogDefault = models.default
@@ -1384,7 +1405,9 @@ class ChatViewModel @Inject constructor(
         _selectedModelId.value = modelId
         isModelExplicitlySelected = true
         if (isDsh) {
-            submitDshModelSelection(providerId, modelId, _selectedVariant.value)
+            val effort = compatibleEffortForDshModel(providerId, modelId, _selectedVariant.value)
+            _selectedVariant.value = effort
+            submitDshModelSelection(providerId, modelId, effort)
         }
     }
 

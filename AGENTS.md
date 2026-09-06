@@ -182,6 +182,9 @@ fork based on OC Remote; the Android namespace/applicationId is
   switch, and a receipt from an obsolete connection generation cannot apply.
   Model display follows session `modelSelection.next`; the catalog's global
   default is valid only when the projection explicitly selects that default.
+  Switching models keeps the current reasoning effort only when the new model
+  advertises it; otherwise send that model's `defaultEffort` or omit effort
+  instead of forwarding an unsupported leftover High.
 - Codex mobile presentation is split between `CodexTimeline`,
   `CodexTimelineViewport`, and `CodexComposerAttachments`. The viewport owns
   the single lazy-list scroll state and uses `ChatFollowTailPolicy`; physical
@@ -209,9 +212,14 @@ fork based on OC Remote; the Android namespace/applicationId is
   including trailing spaces, when starting a thread.
 - Codex composer Enter inserts a newline. Keep submission on the explicit send
   button rather than wiring the text field IME action to submit.
-- Codex and native chat share `ChatHeader` and `ProcessDisclosureRow`
-  presentation. Preserve native composer spacing, AMOLED treatment, and
-  navigation insets when adding backend-specific controls.
+- Codex and native chat share `ChatHeader`, `ChatResponseDock`, and
+  `ProcessDisclosureRow` presentation. Codex `item/tool/requestUserInput`
+  uses the DSH question-card grammar (instant single-select, explicit submit
+  for batch/custom, secret masking) and the native response dock; answers stay
+  the Codex `{ answers: { id: { answers: [...] } } }` wire. Preserve native
+  composer spacing, AMOLED treatment, and navigation insets when adding
+  backend-specific controls. Composer model/effort are compact chips, not
+  full-width menus.
 - Codex user-message images come from `raw.content`: `image.url` is a data or
   HTTP URL, while `localImage.path` belongs to the daemon and must use its
   `fs/readFile` RPC. Never resolve remote image paths through Android files.

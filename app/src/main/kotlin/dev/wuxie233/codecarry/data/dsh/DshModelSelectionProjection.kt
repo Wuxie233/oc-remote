@@ -28,3 +28,18 @@ fun isCurrentDshModelReceipt(
     currentRevision: Long,
     ready: Boolean,
 ): Boolean = ready && requestGeneration == currentGeneration && requestRevision == currentRevision
+
+/**
+ * Pick a reasoning effort the selected model will accept.
+ * Keep the current effort when advertised; otherwise the model's default; otherwise omit.
+ */
+fun compatibleDshReasoningEffort(
+    current: String?,
+    advertisedEffortIds: Collection<String>,
+    defaultEffort: String?,
+): String? {
+    if (current != null && current in advertisedEffortIds) return current
+    if (defaultEffort != null && defaultEffort in advertisedEffortIds) return defaultEffort
+    if (advertisedEffortIds.isEmpty()) return null
+    return defaultEffort ?: advertisedEffortIds.firstOrNull()
+}

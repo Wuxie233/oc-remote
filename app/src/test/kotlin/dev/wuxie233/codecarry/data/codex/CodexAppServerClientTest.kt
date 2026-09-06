@@ -474,12 +474,15 @@ class CodexAppServerClientTest {
         assertEquals("Where should this run?", userInput.questions.single().question)
         assertEquals("Local", userInput.questions.single().options.single().label)
         assertTrue(userInput.questions.single().isOther)
+        assertFalse(userInput.questions.single().multiple)
+        assertFalse(userInput.questions.single().isSecret)
+        assertEquals("Target", userInput.questions.single().header)
 
-        client.replyUserInput(userInput, mapOf("target" to listOf("Local")))
+        client.replyUserInput(userInput, mapOf("target" to listOf("somewhere else")))
         val reply = transport.takeSentObject()
         assertEquals("9", reply["id"]?.jsonPrimitive?.content)
         assertEquals(
-            "Local",
+            "somewhere else",
             reply["result"]
                 ?.jsonObject
                 ?.get("answers")
@@ -491,6 +494,66 @@ class CodexAppServerClientTest {
                 ?.single()
                 ?.jsonPrimitive
                 ?.content,
+        )
+        assertFalse(reply["result"]?.jsonObject?.containsKey("custom") == true)
+        assertFalse(
+            reply["result"]
+                ?.jsonObject
+                ?.get("answers")
+                ?.jsonObject
+                ?.get("target")
+                ?.jsonObject
+                ?.containsKey("custom") == true,
+        )
+    }
+
+    @Test
+    fun `tool user input parses secret multi-select extras without dropping the request`() = runTest {
+        val transport = FakeTransport()
+        val client = newClient(transport, backgroundScope)
+        initialize(client, transport)
+        val serverRequest = async(start = CoroutineStart.UNDISPATCHED) { client.serverRequests.first() }
+        transport.incoming.send(
+            """
+            {
+              "id":"input-secret",
+              "method":"item/tool/requestUserInput",
+              "params":{
+                "threadId":"thread-1",
+                "turnId":"turn-1",
+                "itemId":"item-1",
+                "questions":[{
+                  "id":"secret",
+                  "header":"Secret",
+                  "question":"Which tokens?",
+                  "options":[{"label":"Prod","description":"Live"}],
+                  "isSecret":true,
+                  "multiple":true,
+                  "futureFlag":true
+                }]
+              }
+            }
+            """.trimIndent(),
+        )
+        val request = serverRequest.await()
+        val question = requireNotNull(request.userInput).questions.single()
+        assertTrue(question.isSecret)
+        assertTrue(question.multiple)
+        assertTrue(question.extra.containsKey("futureFlag"))
+
+        client.replyUserInput(requireNotNull(request.userInput), mapOf("secret" to listOf("Prod", "typed-token")))
+        val reply = transport.takeSentObject()
+        assertEquals(
+            listOf("Prod", "typed-token"),
+            reply["result"]
+                ?.jsonObject
+                ?.get("answers")
+                ?.jsonObject
+                ?.get("secret")
+                ?.jsonObject
+                ?.get("answers")
+                ?.let { it as kotlinx.serialization.json.JsonArray }
+                ?.map { it.jsonPrimitive.content },
         )
     }
 
